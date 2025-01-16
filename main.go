@@ -1,18 +1,19 @@
 package main
 
 import (
-	"strings"
 	"bufio"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 )
 
-type cannelName struct {
+type channelnfo struct {
 	Name string
 	Channel string
 }
 
-func (s cannelName) String() string {
+func (s channelnfo) String() string {
 	var builder strings.Builder
 	nameRunes := []rune(s.Name)
 	channelRunes := []rune(s.Channel)
@@ -31,34 +32,69 @@ func (s cannelName) String() string {
 }
 
 func main() {
-	var name string
-	fmt.Scanf("%s\n", &name)
-
-	file, err := os.Open("russian_nouns.txt")
-	if err != nil {
-		fmt.Println("Ошибка при открытии файла:", err)
-		return
-	}
+	name := readUserName()
+	file := openFile("russian_nouns.txt")
 	defer file.Close()
 
-	// Создаем сканер для построчного чтения
+	results := processFile(file, name)
+	printResults(results)
+}
+
+func readUserName() string {
+	var name string
+	fmt.Print("Введите имя: ")
+	fmt.Scanf("%s\n", &name)
+	return strings.ToLower(name)
+}
+
+func openFile(filename string) *os.File {
+	file, err := os.Open(filename)
+	if err != nil {
+		fmt.Println("Ошибка при открытии файла:", err)
+		os.Exit(1)
+	}
+	return file
+}
+
+func processFile(file *os.File, name string) chan channelnfo {
+	results := make(chan channelnfo)
+	var wg sync.WaitGroup
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if channel, ok := findChannel(line, name); ok {
-			fmt.Println(channel)
-		}
+		wg.Add(1)
+		go func(line string) {
+			defer wg.Done()
+			if channel, ok := findChannel(line, name); ok {
+				results <- channel
+			}
+		}(line)
 	}
 
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
 
 	if err := scanner.Err(); err != nil {
 		fmt.Println("Ошибка при сканировании файла:", err)
 	}
+
+	return results
 }
 
-func findChannel(line, name string) (cannelName, bool) {
+func printResults(results chan channelnfo) {
+	count := 0
+	for result := range results {
+		count++
+		fmt.Println(count, "\t", result)
+	}
+}
+
+func findChannel(line, name string) (channelnfo, bool) {
 	if (len(line) <= len(name)) {
-		return cannelName{}, false
+		return channelnfo{}, false
 	}
 	j := 0
 	for i := 0; i < len(line); i++ {
@@ -68,7 +104,7 @@ func findChannel(line, name string) (cannelName, bool) {
 	}
 
 	if (j == len(name)) {
-		return cannelName{Name: name, Channel: line}, true
+		return channelnfo{Name: name, Channel: line}, true
 	} 
-	return cannelName{}, false
+	return channelnfo{}, false
 }
